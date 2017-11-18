@@ -1,0 +1,120 @@
+service:
+  name: ff-service
+
+plugins:
+  - serverless-webpack
+  - serverless-dynamodb-local
+  - serverless-offline
+
+custom:
+  defaultStage: dev
+  profiles:
+    dev: ffxiv-sls
+    prod: ffxiv-sls
+  dynamodb:
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+
+provider:
+  name: aws
+  runtime: nodejs6.10
+  region: us-west-2
+  stage: ${opt:stage, self:custom.defaultStage}
+  profile: ${self:custom.profiles.${self:provider.stage}}
+  apiKeys:
+    - InternalDataAPI
+  environment:
+    USER_MAP_TABLE: ${self:service}-userMap_${opt:stage, self:provider.stage}
+    PROFILE_TABLE: ${self:service}-profile_${opt:stage, self:provider.stage}
+    FC_TABLE: ${self:service}-fC_${opt:stage, self:provider.stage}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:DescribeStream
+        - dynamodb:GetRecords
+        - dynamodb:GetShardIterator
+        - dynamodb:ListStreams
+      Resource: "arn:aws:dynamodb:*:*:*"
+
+package:
+  exclude:
+    - secrets.yml
+
+functions:
+  getCharId:
+    handler: handler.registerUsername
+    events:
+      - http:
+          path: /config/character/{channel}
+          method: POST
+          request:
+            template:
+              application/json: '{"username": "$input.params(''username'')", "server": "$input.params(''server'')"}'
+  getXIVData:
+    handler: handler.getXIVData
+    events:
+      - http:
+          path: /data/{channel}
+          method: GET
+          cors: true
+          request:
+            parameters:
+              paths:
+                channel: true
+
+resources:
+  Resources:
+    FCTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: FCIndex
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: FCIndex
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.FC_TABLE}
+    UserMapTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: channelID
+            AttributeType: N
+        KeySchema:
+          -
+            AttributeName: channelID
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.USER_MAP_TABLE}
+    ProfileTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: ProfileIndex
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: ProfileIndex
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.PROFILE_TABLE}
